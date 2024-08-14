@@ -1,0 +1,83 @@
+---
+name: Python Lint & Test
+
+on:
+  workflow_call:
+    inputs:
+      python_version:
+        description: Python Version - '3.11'
+        required: true
+        type: string
+
+jobs:
+  lint_test:
+    name: Pylint & Pytest
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      checks: write
+      pull-requests: write
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python ${{ inputs.python_version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python_version }}
+
+    - name: Setup Virtual Environment
+      run: |
+        python -m pip install virtualenv
+        python -m venv .venv
+        source .venv/bin/activate
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f "tests/requirements.txt" ]; then
+            pip install -r tests/requirements.txt
+        fi
+        pip install pylint
+        pip install pytest pytest-cov pytest-md-report
+
+    - name: Analyze code with pylint
+      run: |
+        echo "### Pylint Results :snake:" >> $GITHUB_STEP_SUMMARY
+        echo "_Must have Score > 9.0 to pass!_" >> $GITHUB_STEP_SUMMARY
+        pylint $(git ls-files src/*.py) --output-format=text:pylint-output.txt,colorized
+        cat pylint-output.txt >> $GITHUB_STEP_SUMMARY
+        echo ":white_check_mark: **PASSED**" >> $GITHUB_STEP_SUMMARY
+        cat $GITHUB_STEP_SUMMARY > pylint-output.md
+
+    - name: Pylint PR Comment
+      uses: mshick/add-pr-comment@b8f338c590a895d50bcbfa6c5859251edc8952fc
+      if: always()
+      with:
+        message-path: pylint-output.md
+
+    - name: Pytest
+      run: |
+        echo "### Pytest Results ${{ inputs.python_version }} :snake:" >> $GITHUB_STEP_SUMMARY
+        python -m pytest tests/ --md-report --md-report-output=pytest-${{ inputs.python_version }}.md \
+        --doctest-modules --junitxml=pytest-results-${{ inputs.python_version }}.xml \
+        --cov-report=term-missing:skip-covered --cov=. --cov-report xml:coverage-${{ inputs.python_version }}.xml \
+        --cov-fail-under=80
+        cat pytest-${{ inputs.python_version }}.md >> $GITHUB_STEP_SUMMARY
+
+    - name: Pytest Coverage Comment
+      uses: MishaKav/pytest-coverage-comment@fa1c641d7e3fa1d98ed95d5f658ccd638b774628
+      with:
+        junitxml-title: Pytest Results Summary ${{ inputs.python_version }}
+        junitxml-path: pytest-results-${{ inputs.python_version }}.xml
+        pytest-xml-coverage-path: ./coverage-${{ inputs.python_version }}.xml
+        title: Pytest Coverage Report ${{ inputs.python_version }}
+        badge-title: Pytest Coverage Badge
+        unique-id-for-comment: ${{ inputs.python_version }}
+
+    - name: Upload pytest test results
+      uses: actions/upload-artifact@v4
+      with:
+        name: pytest-results-${{ inputs.python_version }}
+        path: pytest-results-${{ inputs.python_version }}.xml
+      if: ${{ always() }}
+

@@ -1,0 +1,62 @@
+---
+name: Python Package Build
+
+on:
+  workflow_call:
+    inputs:
+      package_name:
+        description: Python Package Name
+        required: true
+        type: string
+      release_version:
+        description: Release Version
+        required: true
+        type: string
+      python_version:
+        description: Python Version - '3.11'
+        required: true
+        type: string
+
+jobs:
+  python-build:
+    name: Python Package Build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      # Setup Python version
+      - name: Set up Python ${{ inputs.python_version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      # Create our python virtualenv
+      - name: Setup Virtual Environment
+        run: |
+          python -m pip install virtualenv
+          python -m venv .venv
+          source .venv/bin/activate
+
+      # Install Dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f "requirements.txt" ]; then
+            pip install -r requirements.txt
+          fi
+
+      # Run Setuptools to build our package
+      - name: Build
+        run: |
+          python -m pip install setuptools wheel twine build
+          python -m pip install .
+          python -m build
+
+      # Upload python package as pipeline artifact
+      - name: Upload Python Package as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.package_name }}-${{ inputs.release_version }}
+          path: dist/*.tar.gz
